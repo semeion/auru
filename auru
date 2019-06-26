@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+
+#~ Script: ~/bin/auru
+#~ Description: Check foreign packages (Typically installed w/ pacman -U) for available Updates in AUR and Upstream Websites
+#~ Version: v0.1
+#~ License: GPL
+#~ Date: jun 2019
+#~ Author: Alexandre Bolelli AKA semeion
+#~ Deps: python-html2text, curl, jq, expac, fzf (optional)
+
+threads=10                                  # max nr. of threads
+maxreq=200                                  # Aurweb API limit / max number of requests at same time
+tempdir="/dev/shm/$(basename $0)"           # temp dir
+datadir="${HOME}/.cache/$(basename $0)"     # data dir
+tempfile="${tempdir}/$(basename $0).temp"   # temp file used to save pkg names with issues
+useragent="Mozilla/5.0 (Windows NT 6.1; WOW64; rv:64.0) Gecko/20100101 Firefox/64.0"
+
+declare -a pacnames_array
+
+white="\e[K\e[1;37m"                        # \e[K = Erase to end of line ; \e[1;37m = white bold color
+grey="\e[0;37m"
+red="\e[1;31m"
+green="\e[1;32m"
+yellow="\e[1;33m"
+blue="\e[1;34m"
+cyan="\e[0;36m"
+cafe="\e[0;33m"
+fiuscha="\e[0;35m"
+none="\e[0m"
+
+function array_contains () { 
+    local array="$1[@]"
+    local seeking=$2
+    local in=1
+    for element in "${!array}"; do
+        if [[ $element == $seeking ]]; then
+            in=0
+            break
+        fi
+    done
+    return $in
+}
+
+# Reads N lines from input, keeping further lines in the input.
+# Ref: https://stackoverflow.com/questions/8314499/read-n-lines-at-a-time-using-bash
+# Arguments:
+#   $1: number N of lines to read.
+# Return code:
+#   0 if at least one line was read.
+#   1 if input is empty.
+function readlines () {
+    local N="$1"
+    local line
+    local rc="1"
+    for i in $(seq 1 $N); do    # Read at most N lines
+        read line               # Try reading a single line
+        if [ $? -eq 0 ]; then
+            echo $line          # Output line
+            rc="0"
+        else
+            break
+        fi
+    done
+    return $rc                  # Return 1 if no lines where read
+}
+
+function get_json() {
+    echo "$(curl --silent --connect-timeout 10 --max-time 15 --get "https://aur.archlinux.org/rpc/?v=5&type=info${1}")"
+}
+
+function saveissue() {
+    echo -e "${1}" | tee "${datadir}/${name}.diff"
+    echo "${name}" >>"${tempfile}"
+}
+
+function proccess_thread() {
+    local orphan
+    local version="$(expac %v "${name}")"
+    local url="$(expac %u "${name}")"
+    local build="$(expac --timefmt=%s %b "${name}")"
+    echo -ne "${white}${name}${none} ${green}${version}${none}\r"
+
+    local Version=$(echo "${json}" | jq -r ".results[] | select(.Name == \"${name}\") | .Version")
+    local URL="$(echo "${json}" | jq -r ".results[] | select(.Name == \"${name}\") | .URL")"
+    local LastModified="$(echo "${json}" | jq -r ".results[] | select(.Name == \"${name}\") | .LastModified")"
+
+    #~ echo "${name} - ${Version} - ${URL} - ${LastModified}"
+    array_contains orphans "${name}" && orphan=" - Orphan in Local System" || orphan=""
+    if [ ! -z "${Version}" ]; then
+        if [[ "${Version}" = "${version}" || "${Version}" < "${version}" ]]; then
+            if [[ "${LastModified}" < "${build}" ]]; then
+                if [ "${URL}" = "${url}" ]; then
+                    if curl --silent --connect-timeout 10 --max-time 15 --user-agent "${useragent}" --output "${tempdir}/${name}.html" "${url}"; then
+                        if [ ! -f "${datadir}/${name}.html" ]; then
+                            mv "${tempdir}/${name}.html" "${datadir}/${name}.html"
+                            html2text "${datadir}/${name}.html" > "${datadir}/${name}.txt"
+                            array_contains orphans "${name}" && saveissue "${white}${name}${none} ${green}${version}${none} -> ${green}${Version}${none}${orphan}"
+                        else
+                            html2text "${tempdir}/${name}.html" > "${tempdir}/${name}.txt"
+                            if diff -q "${datadir}/${name}.txt" "${tempdir}/${name}.txt" &>/dev/null; then
+                                array_contains orphans "${name}" && saveissue "${white}${name}${none} ${green}${version}${none} -> ${green}${Version}${none}${orphan}"
+                            else
+                                saveissue "${white}${name}${none} ${green}${version}${none} -> ${green}${Version}${none}${orphan} - Activity Detected on Upstream Website: ${url}"
+                                diff "${datadir}/${name}.txt" "${tempdir}/${name}.txt" >> "${datadir}/${name}.diff"
+                            fi
+                            rm -f "${tempdir}/${name}.txt"
+                        fi
+                    fi
+                    rm -f "${tempdir}/${name}.html"
+                else
+                    saveissue "${white}${name}${none} ${green}${version}${none} -> ${green}${Version}${none} - Package URL differs from AUR Upstream URL${orphan}"
+                fi
+            else
+                saveissue "${white}${name}${none} ${green}${version}${none} -> ${green}${Version}${none}${orphan} - New Tarball Available on AUR - Local Build Date: $(date -d @${build} +'%x %X') / AUR Last Modified: $(date -d @${LastModified} +'%x %X')"
+            fi
+        else
+            saveissue "${white}${name}${none} ${yellow}${version}${none} -> ${green}${Version}${none} - New Version Available on AUR${orphan}"
+        fi
+    else
+        saveissue "${white}${name}${none} ${green}${version}${none}${orphan} - Package Not Found in AUR"
+    fi
+}
+
+function check_chunk() {
+    local search name ret
+    readarray -t pacnames_array             # read array from input
+    for name in ${pacnames_array[@]}; do 
+        search="${search}&arg[]=${name}"
+    done
+    json=$(get_json "${search}")
+    ret="$(echo "${json}" | jq -r '.type')"
+    if [ "${ret}" = "multiinfo" ]; then
+    
+        for name in ${pacnames_array[@]}; do 
+            proccess_thread &
+            while (( $(jobs | wc -l ) >= "${threads}" )); do
+                #~ echo "<<<< $(jobs | wc -l ) >>>>" #debug
+                sleep 1
+            done
+            sleep 0.1
+        done
+        #~ echo "..... $(jobs | wc -l ) ....." # debug
+    else
+        if [ "${ret}" = "error" ]; then
+            local ret="$(echo "${json}" | jq -r '.error')"
+            echo "Aurweb RPC Interface Query Error: ${ret}"
+        else
+            echo "Unknow Query Error in https://aur.archlinux.org"
+        fi
+    fi
+    wait
+}
+
+# Create dir if necessary
+[[ ! -d "${datadir}" ]] && mkdir -p "${datadir}" &>/dev/null
+[[ ! -d "${tempdir}" ]] && mkdir -p "${tempdir}" &>/dev/null
+
+case "$1" in
+    -h|--help)
+        echo -e "Usage: $(basename $0) [--help | --reload 'package' | --check]\n"
+        echo -e "--reset : Reset 'Activity Detected on Upstream Website' message."
+        echo -e "          Will obtain an updated html file for 'package'"
+        echo -e "--check : Search for issues on installed foreign packages, they are"
+        echo -e "          typically packages installed w/ pacman -U"
+        echo -e "--help  : This help\n"
+        echo -e "$(basename $0) dependencies: python-html2text, curl, jq, expac, fzf (optional)"
+        ;;
+
+    --reset)
+        if [ ! -z "${2}" ]; then
+            if url=$(expac '%u' "${2}"); then
+                if curl --silent --connect-timeout 10 --max-time 15 --user-agent "${useragent}" --output "${tempdir}/${2}.html" "${url}"; then
+                    mv -f "${tempdir}/${2}.html" "${datadir}/${2}.html"
+                    html2text "${datadir}/${2}.html" > "${datadir}/${2}.txt"
+                    rm -f "${datadir}/${2}.diff"
+                else
+                    echo "Error accessing ${url}"
+                fi
+            else
+                echo "${2} Package Not Found"
+            fi
+        else
+            echo "Use: $(basename $0) --help"
+        fi
+        ;;
+
+    --check)
+        echo "Checking dependencies..."
+        type html2text curl jq expac tee diff wc >/dev/null || exit 1
+        orphans=( $(pacman -Qqdtm 2>/dev/null) )  # get foreign orphans (Typically installed w/ pacman -U)
+        >"${tempfile}"
+        echo "Checking Foreign Packages Upstream..."
+        pacman -Qqm | while chunk=$(readlines "${maxreq}"); do
+            echo "${chunk}" | check_chunk
+            sleep 0.1
+        done
+        wait
+        type fzf &>/dev/null && [ -s "${tempfile}" ] && \
+            cat "${tempfile}" | \
+            fzf --preview-window right:70% \
+                --preview "cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}" \
+                --layout=reverse \
+                --bind "enter:execute((cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}) | less),right:toggle-preview-wrap,ctrl-r:execute($0 --reset {})"
+
+        rm -f "${tempfile}" &>/dev/null
+        ;;
+esac
+
+#~ Code Reserved to future modifications
+
+#~ find -L "${HOME}/.aur" -name 'PKGBUILD'
+
+#~ url=$(sed -n 's/^url=//p' "${1}")
+#~ url="${url//[\(\)\'\"]/}"
+#~ echo "$url"
