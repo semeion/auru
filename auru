@@ -157,7 +157,7 @@ function check_chunk() {
 
 case "$1" in
     -h|--help)
-        echo -e "Usage: $(basename $0) [--help | --reload 'package' | --check]\n"
+        echo -e "Usage: $(basename $0) [--help | --reset 'package' | --check]\n"
         echo -e "--reset : Reset 'Activity Detected on Upstream Website' message."
         echo -e "          Will obtain an updated html file for 'package'"
         echo -e "--check : Search for issues on installed foreign packages, they are"
