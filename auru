@@ -195,11 +195,11 @@ case "$1" in
             sleep 0.1
         done
         wait
-        type fzf &>/dev/null && [ -s "${tempfile}" ] && \
-            fzf --preview-window right:70% \
-                --preview "cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}" \
-                --layout=reverse \
-                --bind "enter:execute((cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}) | less),right:toggle-preview-wrap,ctrl-r:execute($0 --reset {})" < "${tempfile}"
+        type fzf &>/dev/null && [ -s "${tempfile}" ] && fzf \
+            --preview-window right:70% \
+            --preview "cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}" \
+            --layout=reverse \
+            --bind "enter:execute((cat ${datadir}/{}.diff 2>/dev/null ; echo ; pacman -Qil {}) | less),right:toggle-preview-wrap,ctrl-r:execute($0 --reset {})" < "${tempfile}"
 
         rm -f "${tempfile}" &>/dev/null
         ;;
@@ -212,20 +212,3 @@ esac
 #~ url=$(sed -n 's/^url=//p' "${1}")
 #~ url="${url//[\(\)\'\"]/}"
 #~ echo "$url"
-
-
-#~ 08:19:18 earnestly semeion: You can get thread count with `nproc`.  Don't use $0, don't use basename/dirname when you can use brace expansions.  Don't fake the user agent, use something
-                   #~ identifiable.  I would say don't hardcode ansi escapes, use tput instead, but I'm not actually that bothered, tput is better though.  Don't use 'function'.  Quote
-                   #~ expansions properly, see `shellcheck'.  If you're going to use bash, use bash
-#~ 08:19:21 earnestly and not sh.  Don't use echo, use printf instead.  < will do string comparion, -lt will do numeric.  `shellcheck' should cover the rest of the errors
-#~ 08:19:32 earnestly semeion: But ultimately a tool already exists, called aurphan (for aur packages specifically)                                                       
-#~ 08:19:39 sauyon hullo, I've been trying to get gpg-agent using a Yubikey to work for SSH but keep running into `agent refused operation`
-#~ 08:19:49 <-- caveman (~caveman@cave.mn) has quit (Client Quit)                                                                          
-#~ 08:20:00 --> caveman (~caveman@cave.mn) has joined #archlinux 
-#~ 08:20:05 sauyon `ssh-add -l` lists my key but for some reason `gpg --card-status` errors
-#~ 08:20:33 earnestly semeion: Keep in mind that foreign packages do not mean -U, it means the package doesn't exist in a sync database (this can happen if packages are removed from sync
-                   #~ databases, or added)
-#~ 08:20:45 sauyon sometimes I can replug my device and get the opposite to be true as well
-#~ 08:20:55 <-- Xiti (~Xiti-@unaffiliated/xiti) has quit (Ping timeout: 245 seconds)       
-#~ 08:21:13 <-- mcquinn (~Thunderbi@host186-2.natpool.mwn.de) has quit (Quit: mcquinn)
-#~ 08:21:17 earnestly semeion: Also if you want to check for updates specifically, ignoring all the orphan themes, I think aurutils will have plumbing tools to do just that
