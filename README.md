@@ -25,7 +25,7 @@ Installing with git
    `git clone https://github.com/semeion/auru.git`
    
 2) cd into directory:
-   `cd auru-git`
+   `cd auru`
    
 3) Install the deps with:
    `pacman -S python-html2text curl jq expac fzf`
