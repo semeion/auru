@@ -2,13 +2,13 @@
 AUR Utility - Check foreign packages (typically installed w/ pacman -U) for available updates in AUR and author websites
 
 
-This bash script will show you all packages with issues not reported by pacman and will track the website of developers to show you modifications on the projet.
+This bash script will show you all packages with issues not reported by pacman and will track the website of developers to show you modifications on the projets.
 
 That modifications happens before a package get updates on AUR. On this way you will know what packages will (or not) receive updates on AUR.
 
-It is not a AUR helper, is more like a project tracker, used to obtain info about your installed packages directly from authors, not from AUR.
+It is not an AUR helper, is more like a project tracker, used to obtain info about your installed packages directly from authors, not from AUR.
 
-To see the modifications/news on console you need have `fzf` (optional dep).
+To see the modifications/news on console you need have `fzf` (optional dep) installed.
 
 
 Manual installation
